@@ -20,6 +20,8 @@ import { PRODUCTS, Product, ProductStatus } from '@/data';
 import { ImageBlock } from '@/components/ui/ImageBlock';
 import { Icon } from '@/components/ui/Icon';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
+import { PAID_ONLY_EMOJIS } from '@/constants/paidContent';
 
 const chatBtnShadow = Platform.select({
   web: { boxShadow: '0px 4px 8px rgba(255, 122, 85, 0.3)' } as object,
@@ -32,6 +34,7 @@ export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { t, lang } = useLang();
+  const { profile } = useAuth();
   const insets = useSafeAreaInsets();
 
   const mockProduct = PRODUCTS.find(p => p.id === id);
@@ -121,6 +124,27 @@ export default function ProductDetailScreen() {
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
+
+  if (!loading && PAID_ONLY_EMOJIS.includes(product.emoji) && profile?.tier !== 'paid') {
+    return (
+      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.headerBtn, { position: 'absolute', top: 52, left: 8 }]}
+          activeOpacity={0.8}
+        >
+          <Icon name="back" size={24} color={COL.ink} />
+        </TouchableOpacity>
+        <Text style={{ fontSize: 40, marginBottom: 12 }}>🔒</Text>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: COL.ink, marginBottom: 6 }}>
+          유료회원 전용
+        </Text>
+        <Text style={{ fontSize: 14, color: COL.ink3 }}>
+          유료 회원만 볼 수 있는 상품이에요
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

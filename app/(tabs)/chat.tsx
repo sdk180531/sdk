@@ -84,7 +84,7 @@ export default function ChatListScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <AppHeader
         currentTown={currentTown}
         onLocationPress={() => router.push('/location')}

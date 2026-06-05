@@ -19,7 +19,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.shindongkyu.MyNewProject"
     },
     "web": {
       "output": "static",
@@ -51,7 +55,11 @@
       "reactCompiler": true
     },
     "extra": {
-      "kakaoApiKey": "3d671f125f911dc96a0e097185efad87"
+      "kakaoApiKey": "3d671f125f911dc96a0e097185efad87",
+      "router": {},
+      "eas": {
+        "projectId": "48e67a65-2815-4faf-ad64-c6518689fb3d"
+      }
     }
   }
 }

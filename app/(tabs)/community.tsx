@@ -28,7 +28,7 @@ export default function CommunityScreen() {
   const currentTown = lang === 'ko' ? '망원동' : 'Mangwon';
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <AppHeader
         currentTown={currentTown}
         onLocationPress={() => router.push('/location')}

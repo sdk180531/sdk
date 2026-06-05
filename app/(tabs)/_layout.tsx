@@ -1,4 +1,4 @@
-import { Redirect, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -9,10 +9,10 @@ import { useAuth } from '@/context/AuthContext';
 
 export default function TabLayout() {
   const { t } = useLang();
-  const { session, loading } = useAuth();
+  const { session, loading, profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
 
   if (loading) return null;
-  if (!session) return <Redirect href="/(auth)/login" />;
 
   return (
     <Tabs
@@ -66,6 +66,16 @@ export default function TabLayout() {
           title: t.me,
           tabBarIcon: ({ color, focused }) => (
             <Icon name="me" size={24} color={color} stroke={focused ? 2.2 : 1.8} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: t.adminTab,
+          href: isAdmin ? undefined : null,
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="sliders" size={24} color={color} stroke={focused ? 2.2 : 1.8} />
           ),
         }}
       />

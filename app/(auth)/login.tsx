@@ -9,74 +9,116 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 
 import { COL } from '@/constants/colors';
 import { useLang } from '@/context/LangContext';
 import { supabase } from '@/lib/supabase';
 import { Toast } from '@/components/ui/Toast';
+import { GoogleIcon } from '@/components/ui/GoogleIcon';
+import { KakaoIcon } from '@/components/ui/KakaoIcon';
 
 export default function LoginScreen() {
   const { t, lang } = useLang();
   const { loggedOut } = useLocalSearchParams<{ loggedOut?: string }>();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [kakaoLoading, setKakaoLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showToast, setShowToast] = useState(loggedOut === 'true');
+  const showToast = loggedOut === 'true';
+
+  function validate(): string {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return t.emailError;
+    if (password.length < 6) return t.passwordError;
+    return '';
+  }
 
   async function handleSubmit() {
-    if (!email.trim() || !password.trim()) return;
+    const msg = validate();
+    if (msg) {
+      setError(msg);
+      return;
+    }
     setLoading(true);
     setError('');
-
-    if (mode === 'login') {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (error) {
-        setError(t.loginError);
-      } else {
-        router.replace('/(tabs)');
-      }
-    } else {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-      });
-      if (signUpError) {
-        setError(t.signupError);
-      } else if (data.session) {
-        router.replace('/(tabs)');
-      } else {
-        // 이메일 인증 활성화 시: 가입 직후 즉시 로그인 시도
-        const { error: loginError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        if (loginError) {
-          setMode('login');
-          Alert.alert('', t.signupSuccess); // 이메일 인증 필요
-        } else {
-          router.replace('/(tabs)');
-        }
-      }
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) {
+      setError(authError.message ?? t.serverError);
     }
     setLoading(false);
   }
 
-  function toggleMode() {
-    setMode(m => (m === 'login' ? 'signup' : 'login'));
+  async function signInWithGoogle() {
+    setGoogleLoading(true);
     setError('');
+    try {
+      const redirectUrl = Linking.createURL('/');
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: redirectUrl, skipBrowserRedirect: true },
+      });
+      if (oauthError || !data?.url) throw oauthError ?? new Error('No URL');
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+      if (result.type === 'success' && result.url) {
+        const { queryParams } = Linking.parse(result.url);
+        const code = queryParams?.code as string | undefined;
+        if (code) {
+          const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+          if (sessionError) throw sessionError;
+          // 루트 레이아웃 useEffect가 session 업데이트 후 /(tabs)로 이동
+        } else {
+          throw new Error('인증 코드를 받지 못했어요. 다시 시도해주세요.');
+        }
+      } else if (result.type !== 'dismiss') {
+        throw new Error('Google 로그인에 실패했어요.');
+      }
+    } catch (e: any) {
+      setError(e.message ?? t.serverError);
+    } finally {
+      setGoogleLoading(false);
+    }
   }
 
-  const isLogin = mode === 'login';
+  async function signInWithKakao() {
+    setKakaoLoading(true);
+    setError('');
+    try {
+      const redirectUrl = Linking.createURL('/');
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'kakao',
+        options: { redirectTo: redirectUrl, skipBrowserRedirect: true },
+      });
+      if (oauthError || !data?.url) throw oauthError ?? new Error('No URL');
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+      if (result.type === 'success' && result.url) {
+        const { queryParams } = Linking.parse(result.url);
+        const code = queryParams?.code as string | undefined;
+        if (code) {
+          const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+          if (sessionError) throw sessionError;
+        } else {
+          throw new Error('인증 코드를 받지 못했어요. 다시 시도해주세요.');
+        }
+      } else if (result.type !== 'dismiss') {
+        throw new Error('카카오 로그인에 실패했어요.');
+      }
+    } catch (e: any) {
+      setError(e.message ?? t.serverError);
+    } finally {
+      setKakaoLoading(false);
+    }
+  }
+
+  const isSubmitDisabled = loading || email.length === 0 || password.length === 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -90,7 +132,6 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* 앱 로고 */}
           <View style={styles.logoWrap}>
             <View style={styles.logoCircle}>
               <Text style={styles.logoEmoji}>🏘️</Text>
@@ -101,36 +142,13 @@ export default function LoginScreen() {
             </Text>
           </View>
 
-          {/* 모드 탭 */}
-          <View style={styles.tabRow}>
-            <TouchableOpacity
-              onPress={() => { setMode('login'); setError(''); }}
-              style={[styles.tab, isLogin && styles.tabActive]}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.tabText, isLogin && styles.tabTextActive]}>
-                {t.loginTitle}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => { setMode('signup'); setError(''); }}
-              style={[styles.tab, !isLogin && styles.tabActive]}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.tabText, !isLogin && styles.tabTextActive]}>
-                {t.signupTitle}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* 폼 */}
           <View style={styles.form}>
-            <Text style={styles.label}>{t.email}</Text>
+            <Text style={styles.label}>{t.emailLabel}</Text>
             <TextInput
               style={styles.input}
               value={email}
               onChangeText={setEmail}
-              placeholder="example@email.com"
+              placeholder={t.emailPlaceholder}
               placeholderTextColor={COL.ink3}
               keyboardType="email-address"
               autoCapitalize="none"
@@ -138,14 +156,15 @@ export default function LoginScreen() {
               returnKeyType="next"
             />
 
-            <Text style={[styles.label, { marginTop: 16 }]}>{t.password}</Text>
+            <Text style={[styles.label, { marginTop: 16 }]}>{t.passwordLabel}</Text>
             <TextInput
               style={styles.input}
               value={password}
               onChangeText={setPassword}
-              placeholder={lang === 'ko' ? '6자 이상 입력' : 'At least 6 characters'}
+              placeholder={t.passwordPlaceholder}
               placeholderTextColor={COL.ink3}
               secureTextEntry
+              autoCapitalize="none"
               returnKeyType="done"
               onSubmitEditing={handleSubmit}
             />
@@ -154,29 +173,55 @@ export default function LoginScreen() {
 
             <TouchableOpacity
               onPress={handleSubmit}
-              style={[styles.btn, (!email.trim() || !password.trim()) && styles.btnDisabled]}
+              style={[styles.btn, isSubmitDisabled && styles.btnDisabled]}
               activeOpacity={0.85}
-              disabled={loading || !email.trim() || !password.trim()}
+              disabled={isSubmitDisabled}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.btnText}>
-                  {isLogin ? t.loginBtn : t.signupBtn}
-                </Text>
+                <Text style={styles.btnText}>{t.loginBtn}</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>{t.orDivider}</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              onPress={signInWithGoogle}
+              style={styles.googleBtn}
+              activeOpacity={0.85}
+              disabled={googleLoading}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#1F1F1F" />
+              ) : (
+                <View style={styles.googleBtnContent}>
+                  <GoogleIcon size={20} />
+                  <Text style={styles.googleBtnText}>{t.continueWithGoogle}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={signInWithKakao}
+              style={styles.kakaoBtn}
+              activeOpacity={0.85}
+              disabled={kakaoLoading}
+            >
+              {kakaoLoading ? (
+                <ActivityIndicator color="#3C1E1E" />
+              ) : (
+                <View style={styles.googleBtnContent}>
+                  <KakaoIcon size={20} />
+                  <Text style={styles.kakaoBtnText}>{t.continueWithKakao}</Text>
+                </View>
               )}
             </TouchableOpacity>
           </View>
-
-          {/* 모드 전환 링크 */}
-          <TouchableOpacity onPress={toggleMode} style={styles.switchRow} activeOpacity={0.7}>
-            <Text style={styles.switchText}>
-              {isLogin ? t.noAccount : t.hasAccount}{' '}
-              <Text style={styles.switchLink}>
-                {isLogin ? t.signupTitle : t.loginTitle}
-              </Text>
-            </Text>
-          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -213,22 +258,6 @@ const styles = StyleSheet.create({
     color: COL.ink3,
     marginTop: 6,
   },
-  tabRow: {
-    flexDirection: 'row',
-    backgroundColor: COL.lineSoft,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 28,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 10,
-  },
-  tabActive: { backgroundColor: COL.surface },
-  tabText: { fontSize: 15, fontWeight: '600', color: COL.ink3 },
-  tabTextActive: { color: COL.ink, fontWeight: '700' },
   form: { gap: 4 },
   label: {
     fontSize: 13,
@@ -265,7 +294,39 @@ const styles = StyleSheet.create({
     color: '#fff',
     letterSpacing: -0.3,
   },
-  switchRow: { marginTop: 24, alignItems: 'center' },
-  switchText: { fontSize: 14, color: COL.ink3 },
-  switchLink: { color: COL.primary, fontWeight: '700' },
+  divider: { flexDirection: 'row', alignItems: 'center', marginTop: 20 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: COL.line },
+  dividerText: { fontSize: 13, color: COL.ink3, marginHorizontal: 12 },
+  googleBtn: {
+    marginTop: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#747775',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  googleBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  googleBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F1F1F',
+  },
+  kakaoBtn: {
+    marginTop: 12,
+    backgroundColor: '#FEE500',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  kakaoBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#191919',
+  },
 });

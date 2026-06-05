@@ -1,112 +1,190 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  SectionList,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Collapsible } from '@/components/ui/collapsible';
-import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import { COL } from '@/constants/colors';
+import { useLang } from '@/context/LangContext';
+import { useAuth, Profile } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 
-export default function TabTwoScreen() {
+export default function AdminScreen() {
+  const { t } = useLang();
+  const { profile: myProfile } = useAuth();
+
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (myProfile?.role === 'admin') fetchUsers();
+  }, [myProfile]);
+
+  async function fetchUsers() {
+    setLoading(true);
+    const { data } = await supabase.from('profiles').select('*');
+    setUsers(data ?? []);
+    setLoading(false);
+  }
+
+  async function toggleTier(userId: string, currentTier: 'free' | 'paid') {
+    const newTier = currentTier === 'free' ? 'paid' : 'free';
+    setUpdatingId(userId);
+    await supabase.from('profiles').update({ tier: newTier }).eq('id', userId);
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, tier: newTier } : u));
+    setUpdatingId(null);
+  }
+
+  if (myProfile?.role !== 'admin') {
+    return (
+      <SafeAreaView edges={['top']} style={styles.container}>
+        <View style={styles.denied}>
+          <Text style={styles.deniedText}>🔒</Text>
+          <Text style={styles.deniedLabel}>접근 권한이 없어요</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const paid = users.filter(u => u.tier === 'paid');
+  const free = users.filter(u => u.tier === 'free');
+
+  const sections = [
+    { title: `${t.paidMembers} (${paid.length})`, data: paid },
+    { title: `${t.freeMembers} (${free.length})`, data: free },
+  ];
+
+  function renderItem({ item }: { item: Profile }) {
+    const isPaid = item.tier === 'paid';
+    const isUpdating = updatingId === item.id;
+    const displayName = item.nickname ?? item.email ?? item.id.slice(0, 8);
+
+    return (
+      <View style={styles.row}>
+        <View style={styles.userInfo}>
+          <Text style={styles.userName} numberOfLines={1}>{displayName}</Text>
+          {item.email && item.nickname && (
+            <Text style={styles.userEmail} numberOfLines={1}>{item.email}</Text>
+          )}
+        </View>
+        <View style={[styles.tierBadge, isPaid ? styles.tierBadgePaid : styles.tierBadgeFree]}>
+          <Text style={[styles.tierText, isPaid ? styles.tierTextPaid : styles.tierTextFree]}>
+            {isPaid ? t.tierPaid : t.tierFree}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.toggleBtn, isUpdating && styles.toggleBtnDisabled]}
+          onPress={() => toggleTier(item.id, item.tier)}
+          disabled={isUpdating}
+          activeOpacity={0.75}
+        >
+          {isUpdating ? (
+            <ActivityIndicator size="small" color={COL.ink3} />
+          ) : (
+            <Text style={styles.toggleText}>
+              {isPaid ? t.changeToFree : t.changeToPaid}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
+    <SafeAreaView edges={['top']} style={styles.container}>
+      <Text style={styles.header}>{t.adminPage}</Text>
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color={COL.primary} />
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+            </View>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.empty}>{t.noUsers}</Text>
+          }
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          stickySectionHeadersEnabled={false}
+          onRefresh={fetchUsers}
+          refreshing={loading}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: { flex: 1, backgroundColor: COL.bg },
+  header: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COL.ink,
+    letterSpacing: -0.5,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
-  titleContainer: {
+  list: { paddingHorizontal: 16, paddingBottom: 40 },
+  sectionHeader: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginTop: 8,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COL.ink2,
+    letterSpacing: -0.2,
+  },
+  row: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    backgroundColor: COL.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COL.line,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+    gap: 10,
   },
+  userInfo: { flex: 1, minWidth: 0 },
+  userName: { fontSize: 14, fontWeight: '600', color: COL.ink },
+  userEmail: { fontSize: 12, color: COL.ink3, marginTop: 2 },
+  tierBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  tierBadgePaid: { backgroundColor: '#EEF4FF' },
+  tierBadgeFree: { backgroundColor: COL.lineSoft },
+  tierText: { fontSize: 11, fontWeight: '700' },
+  tierTextPaid: { color: '#3B6FD4' },
+  tierTextFree: { color: COL.ink3 },
+  toggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: COL.primarySoft,
+    minWidth: 72,
+    alignItems: 'center',
+  },
+  toggleBtnDisabled: { backgroundColor: COL.lineSoft },
+  toggleText: { fontSize: 12, fontWeight: '600', color: COL.primary },
+  denied: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  deniedText: { fontSize: 40 },
+  deniedLabel: { fontSize: 16, color: COL.ink3, fontWeight: '500' },
+  empty: { textAlign: 'center', color: COL.ink3, marginTop: 40, fontSize: 14 },
 });

@@ -23,6 +23,8 @@ import { StatusChip } from '@/components/ui/StatusChip';
 import { FAB } from '@/components/ui/FAB';
 import { Icon } from '@/components/ui/Icon';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
+import { PAID_ONLY_EMOJIS } from '@/constants/paidContent';
 
 interface SupabaseRow {
   id: string;
@@ -70,6 +72,7 @@ function mapRow(row: SupabaseRow): Product {
 export default function HomeScreen() {
   const router = useRouter();
   const { t, lang } = useLang();
+  const { profile } = useAuth();
   const [selectedCat, setSelectedCat] = useState(0);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [dbProducts, setDbProducts] = useState<Product[]>([]);
@@ -104,12 +107,16 @@ export default function HomeScreen() {
     setRefreshing(false);
   }
 
-  const allProducts = selectedCat === 0
+  const base = selectedCat === 0
     ? dbProducts
     : dbProducts.filter(p => p.category === selectedCat);
 
+  const allProducts = profile?.tier === 'paid'
+    ? base
+    : base.filter(p => !PAID_ONLY_EMOJIS.includes(p.emoji));
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <AppHeader
         currentTown={currentTown}
         onLocationPress={() => router.push('/location')}
